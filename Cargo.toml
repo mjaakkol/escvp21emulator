@@ -1,0 +1,22 @@
+[package]
+name = "epsonemu"
+version = "0.1.0"
+authors = ["Mikko Jaakkola <mikko.la.jaakkola@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "Epson projector emulator"
+keywords = ["emulator", "epson", "esc/vp21"]
+categories = ["command-line-utilities", "emulators"]
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "epsonemu"
+
+[dependencies]
+serialport = "4.3"
+clap = { version = "4", features = ["derive"] }
+bytes = "1"
+regex = "1.10"
