@@ -15,8 +15,12 @@ impl Param {
         }
     }
 
-    pub fn get_value(&self) -> &str {
-        &self.value
+    pub fn get_value(&self) -> Option<String> {
+        if self.value.len() > 0 {
+            Some(self.value.clone())
+        } else {
+            None
+        }
     }
 
     pub fn set_value(&mut self, value: &str) -> bool {

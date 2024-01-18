@@ -25,26 +25,32 @@ impl PowerState {
     }
 
     pub fn process_message(&mut self, message: &str) -> Result<Option<String>, std::io::Error> {
-        match self {
-            PowerState::PowerOff => self.process_poweroff(message),
-            PowerState::Warming(time_stamp) => self.process_warming(message),
-            PowerState::Cooling(time_stamp) => self.process_cooling(message),
-            PowerState::LampOn => self.process_lamp_on(message),
-            _ => {
-                println!("Process message: invalid state: {:?}", self);
-                self.process_poweroff(message)
+        if message == "PWR?\r" {
+            return Ok(Some(self.get_state_string(message)))
+        } else {
+            match self {
+                PowerState::PowerOff => self.process_poweroff(message),
+                PowerState::Warming(time_stamp) => self.process_warming(message),
+                PowerState::Cooling(time_stamp) => self.process_cooling(message),
+                PowerState::LampOn => self.process_lamp_on(message),
+                _ => {
+                    println!("Process message: invalid state: {:?}", self);
+                    self.process_poweroff(message)
+                }
             }
         }
     }
 
-    pub fn get_state(&self) -> &str {
-        match self {
-            PowerState::PowerOff => "PowerOff",
-            PowerState::Warming(_) => "Warming",
-            PowerState::Cooling(_) => "Cooling",
-            PowerState::LampOn => "LampOn",
-            PowerState::Terminated => "Terminated",
-        }
+    pub fn get_state_string(&self, message: &str) -> String {
+        format!("PWR={}\r",
+            match self {
+                PowerState::PowerOff => "00",
+                PowerState::Warming(_) => "01",
+                PowerState::Cooling(_) => "03",
+                PowerState::LampOn => "02",
+                PowerState::Terminated => "99",
+            }
+        )
     }
 
     pub fn process_cooling(&mut self, message: &str) -> Result<Option<String>, std::io::Error>{
@@ -56,6 +62,7 @@ impl PowerState {
     }
 
     pub fn process_poweroff(&mut self, message: &str) -> Result<Option<String>, std::io::Error>{
+
         Ok(None)
     }
 
