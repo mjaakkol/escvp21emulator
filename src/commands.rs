@@ -40,19 +40,28 @@ impl Param {
 
 
 pub struct Commands {
-    commands: HashMap<String, Param>
+    commands: HashMap<&'static str, Param>,
 }
 
 impl Commands {
     pub fn new() -> Commands {
         Commands {
-            commands: HashMap::new()
+            commands: HashMap::from([
+                ("SNO",Param::new("1234567890","")),
+                ("NAME",Param::new("EpsonArtome","")),
+                ("FILT",Param::new("0000","")),
+                ("LAMP",Param::new("0000","")),
+                ("SOURCE",Param::new("0000","")),
+                ("MODEL",Param::new("0000","")),
+                ("VER",Param::new("0000","")),
+                ("ERR",Param::new("0000","")),
+                ("SOURCE",Param::new("0000","")),
+                ("MUTE",Param::new("0000","")),
+                ("VOL",Param::new("90","")),
+                ("AVMT",Param::new("0000","")),
+                ("AUTOHOME",Param::new("00","")),
+                ("ZOOM",Param::new("0","\\d{1,3}")),
+            ])
         }
     }
-
-    pub fn add(&mut self, name: &str, value: &str, validation: &str) {
-        self.commands.insert(name.to_string(), Param::new(value, validation));
-
-    }
-
 }

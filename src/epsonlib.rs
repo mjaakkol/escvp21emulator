@@ -26,6 +26,21 @@ impl PowerState {
 
     pub fn process_message(&mut self, message: &str) -> Result<Option<String>, std::io::Error> {
         if message == "PWR?\r" {
+            match self {
+                // This ensures that timer effect becomes visible if expired
+                PowerState::Warming(timer) => {
+                    if timer.elapsed().unwrap() > WARMING_TIME {
+                        *self = PowerState::LampOn;
+                    }
+                },
+                PowerState::Cooling(timer) => {
+                    if timer.elapsed().unwrap() > COOLDOWN_TIME {
+                        *self = PowerState::PowerOff;
+                    }
+                },
+                _ => (),
+            }
+
             return Ok(Some(self.get_state_string(message)))
         } else {
             match self {
@@ -54,16 +69,39 @@ impl PowerState {
     }
 
     pub fn process_cooling(&mut self, message: &str) -> Result<Option<String>, std::io::Error>{
-        Ok(None)
+        let PowerState::Cooling(time_stamp) = self else {
+            panic!("Invalid state: {:?}", self)
+        };
+
+        if time_stamp.elapsed().unwrap() > COOLDOWN_TIME {
+            *self = PowerState::PowerOff;
+            Ok(None)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn process_warming(&mut self, message: &str) -> Result<Option<String>, std::io::Error>{
-        Ok(None)
+        let PowerState::Warming(time_stamp) = self else {
+            panic!("Invalid state: {:?}", self)
+        };
+
+        if time_stamp.elapsed().unwrap() > WARMING_TIME {
+            *self = PowerState::LampOn;
+            self.process_lamp_on(message)
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn process_poweroff(&mut self, message: &str) -> Result<Option<String>, std::io::Error>{
-
-        Ok(None)
+        if message == "PWR ON\r" {
+            *self = PowerState::Warming(time::SystemTime::now());
+            Ok(None)
+        } else {
+            // Process commands
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "Invalid command"))
+        }
     }
 
     pub fn process_lamp_on(&mut self, message: &str) -> Result<Option<String>, std::io::Error> {
