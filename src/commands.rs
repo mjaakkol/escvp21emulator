@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    time,
+    time::{
+        Duration,
+        SystemTime
+    }
 };
 use regex::Regex;
 use thiserror::Error;
@@ -47,16 +50,15 @@ impl<'a> Param<'a> {
 
 }
 
-const WARMING_TIME: time::Duration = time::Duration::from_secs(5);
-const COOLDOWN_TIME: time::Duration = time::Duration::from_secs(3);
+const WARMING_TIME: Duration = Duration::from_secs(5);
+const COOLDOWN_TIME: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub enum PowerState {
     PowerOff,
-    Warming(time::SystemTime),
-    Cooling(time::SystemTime),
+    Warming(SystemTime),
+    Cooling(SystemTime),
     LampOn,
-    Terminated,
 }
 
 
@@ -83,34 +85,31 @@ impl PowerState {
     pub fn power_up(&mut self) {
         match self {
             PowerState::PowerOff => {
-                *self = PowerState::Warming(time::SystemTime::now());
+                *self = PowerState::Warming(SystemTime::now());
             },
             PowerState::Warming(_) => (),
             PowerState::Cooling(_) => (),
             PowerState::LampOn => (),
-            PowerState::Terminated => (),
         }
     }
 
     pub fn power_down(&mut self) {
         match self {
-            PowerState::PowerOff => {
-                *self = PowerState::Warming(time::SystemTime::now());
-            },
+            PowerState::PowerOff => (),
             PowerState::Warming(_) => (),
             PowerState::Cooling(_) => (),
-            PowerState::LampOn => (),
-            PowerState::Terminated => (),
+            PowerState::LampOn => {
+                *self = PowerState::Cooling(SystemTime::now());
+            },
         }
     }
 
-    pub fn as_str(&self) -> &'static str {
-        match self {
+    pub fn as_str(&mut self) -> &'static str {
+        match self.get_state() {
             PowerState::PowerOff => "00",
             PowerState::Warming(_) => "01",
             PowerState::Cooling(_) => "03",
             PowerState::LampOn => "02",
-            PowerState::Terminated => "99",
         }
     }
 }
@@ -207,5 +206,23 @@ impl<'a> CommandProcessor<'a> {
 mod tests {
     use super::*;
 
-
+    #[test]
+    fn test_enum() {
+        let mut state = PowerState::PowerOff;
+        assert_eq!(state.as_str(), "00");
+        state.power_up();
+        assert_eq!(state.as_str(), "01");
+        state.power_up();
+        assert_eq!(state.as_str(), "01");
+        std::thread::sleep(WARMING_TIME);
+        assert_eq!(state.as_str(), "02");
+        state.power_down();
+        assert_eq!(state.as_str(), "03");
+        state.power_down();
+        assert_eq!(state.as_str(), "03");
+        std::thread::sleep(COOLDOWN_TIME);
+        assert_eq!(state.as_str(), "00");
+        state.power_down();
+        assert_eq!(state.as_str(), "00");
+    }
 }
