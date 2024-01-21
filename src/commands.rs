@@ -61,10 +61,6 @@ pub enum PowerState {
 
 
 impl PowerState {
-    pub fn new() -> PowerState {
-        PowerState::PowerOff
-    }
-
     pub fn get_state(&mut self) -> PowerState {
         match self {
             // This ensures that timer effect becomes visible if expired
@@ -84,7 +80,39 @@ impl PowerState {
         self.clone()
     }
 
+    pub fn power_up(&mut self) {
+        match self {
+            PowerState::PowerOff => {
+                *self = PowerState::Warming(time::SystemTime::now());
+            },
+            PowerState::Warming(_) => (),
+            PowerState::Cooling(_) => (),
+            PowerState::LampOn => (),
+            PowerState::Terminated => (),
+        }
+    }
 
+    pub fn power_down(&mut self) {
+        match self {
+            PowerState::PowerOff => {
+                *self = PowerState::Warming(time::SystemTime::now());
+            },
+            PowerState::Warming(_) => (),
+            PowerState::Cooling(_) => (),
+            PowerState::LampOn => (),
+            PowerState::Terminated => (),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PowerState::PowerOff => "00",
+            PowerState::Warming(_) => "01",
+            PowerState::Cooling(_) => "03",
+            PowerState::LampOn => "02",
+            PowerState::Terminated => "99",
+        }
+    }
 }
 
 
@@ -107,6 +135,7 @@ pub enum CommandError {
 
 pub struct CommandProcessor<'a> {
     commands: HashMap<&'static str, Param<'a>>,
+    power_state: PowerState,
 }
 
 impl<'a> CommandProcessor<'a> {
@@ -114,6 +143,8 @@ impl<'a> CommandProcessor<'a> {
         CommandProcessor {
             commands: HashMap::from([
                 ("SNO",Param::new("1234567890","")),
+                ("PWR", Param::new("00", ON_OFF)),
+                /*
                 ("SIGNAL",Param::new("01","")),
                 ("ONTIME",Param::new("110","")),
                 ("LAMP",Param::new("100","")),
@@ -127,8 +158,9 @@ impl<'a> CommandProcessor<'a> {
                 ("HREVERSE", Param::new("ON",ON_OFF)),
                 ("VREVERSE", Param::new("ON", ON_OFF)),
                 ("IMGSHIFT", Param::new("0 1", "-?[0-2] -?[0-2]")),
-                ("REFRESHTIME", Param::new("00", TWO_DIGITS))
-            ])
+                ("REFRESHTIME", Param::new("00", TWO_DIGITS)) */
+            ]),
+            power_state: PowerState::PowerOff,
         }
     }
 
@@ -171,3 +203,9 @@ impl<'a> CommandProcessor<'a> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+
+}
