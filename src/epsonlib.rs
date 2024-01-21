@@ -3,8 +3,12 @@ use std::{
     time
 };
 
-use crate::codec;
+use crate::{
+    codec,
+    commands::CommandProcessor,
+};
 
+/*
 // Timeouts
 const WARMING_TIME: time::Duration = time::Duration::from_secs(5);
 const COOLDOWN_TIME: time::Duration = time::Duration::from_secs(3);
@@ -110,6 +114,8 @@ impl PowerState {
 
 }
 
+*/
+
 pub struct Epsonlib<'a, T: 'a + Read + Write> {
     // private
     port: &'a mut T,
@@ -126,6 +132,8 @@ impl<'a, T: 'a + Read + Write> Epsonlib<'a, T> {
     pub fn run_until(&mut self) {
         let mut serial_buf: Vec<u8> = vec![0; 128];
         let mut codec = codec::Codec::new();
+
+        let mut processor = CommandProcessor::new();
         loop {
             match self.port.read(serial_buf.as_mut_slice()) {
                 Ok(t) => {
@@ -133,8 +141,14 @@ impl<'a, T: 'a + Read + Write> Epsonlib<'a, T> {
                         println!("Read {} bytes: {:?}", t, &serial_buf[..t]);
                         match codec.decode(&mut serial_buf[..t]) {
                             Ok(Some(s)) => {
-                                println!("Decoded: {}", s);
                                 self.print(&s);
+                                match processor.process_message(&s) {
+                                    Ok(Some(s)) => {
+                                        self.port.write(s.as_bytes()).unwrap();
+                                    },
+                                    Ok(None) => (),
+                                    Err(e) => eprintln!("{:?}", e),
+                                }
                             }
                             Ok(None) => (),
                             Err(e) => eprintln!("{:?}", e),

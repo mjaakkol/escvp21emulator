@@ -20,3 +20,4 @@ serialport = "4.3"
 clap = { version = "4", features = ["derive"] }
 bytes = "1"
 regex = "1.10"
+thiserror = "1"
