@@ -219,8 +219,8 @@ impl<'a> CommandProcessor<'a> {
     }
 
     pub fn process_message(&mut self, message: &str) -> Result<Option<String>, CommandError> {
-        if message.ends_with("?\r") {
-            let result = self.process_query(&message[0..message.len()-2]);
+        if message.ends_with("?") {
+            let result = self.process_query(&message[0..message.len()-1]);
             match &result {
                 Ok(Some(_)) => result,
                 Ok(None) => Err(CommandError::InvalidQuery),
@@ -229,8 +229,8 @@ impl<'a> CommandProcessor<'a> {
             }
         } else {
             let result = Regex::new("([A-Z][A-Z0-9]+) (.+)").unwrap().captures(message).map(|cap| {
-                let command = cap.get(0).ok_or(CommandError::InvalidCommand)?;
-                let value = cap.get(1).ok_or(CommandError::InvalidValue)?;
+                let command = cap.get(1).ok_or(CommandError::InvalidCommand)?;
+                let value = cap.get(2).ok_or(CommandError::InvalidValue)?;
 
                 self.process_set(command.as_str(), value.as_str())?;
                 Ok(None)
@@ -262,5 +262,18 @@ mod tests {
         assert_eq!(state.as_str(), "00");
         state.power_down();
         assert_eq!(state.as_str(), "00");
+    }
+
+    #[test]
+    fn test_power_command() {
+        let mut processor = CommandProcessor::new();
+        assert_eq!(processor.process_message("PWR ON").unwrap(), None);
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("01".to_string()));
+        std::thread::sleep(WARMING_TIME);
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("02".to_string()));
+        assert_eq!(processor.process_message("PWR OFF").unwrap(), None);
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("03".to_string()));
+        std::thread::sleep(COOLDOWN_TIME);
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("00".to_string()));
     }
 }
