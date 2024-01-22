@@ -3,7 +3,7 @@ use std::{
     time::{
         Duration,
         SystemTime
-    }
+    },
 };
 use regex::Regex;
 use thiserror::Error;
@@ -11,7 +11,7 @@ use thiserror::Error;
 pub struct Param<'a> {
     default: &'a str,
     value: String,
-    validation: Regex
+    validation: Regex,
 }
 
 impl<'a> Param<'a> {
@@ -19,7 +19,7 @@ impl<'a> Param<'a> {
         Param {
             default,
             value: default.to_string(),
-            validation: Regex::new(validation).unwrap()
+            validation: Regex::new(validation).unwrap(),
         }
     }
 
@@ -121,7 +121,7 @@ const TWO_CHARS: &str = "[A-Z0-9]{2}";
 const TWO_DIGITS: &str = "\\d{2}";
 const ON_OFF: &str = "(OFF|ON)";
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum CommandError {
     #[error("Invalid command")]
     InvalidCommand,
@@ -129,6 +129,8 @@ pub enum CommandError {
     InvalidQuery,
     #[error("Invalid value")]
     InvalidValue,
+    #[error("Invalid power state")]
+    InvalidPowerState,
 }
 
 
@@ -139,10 +141,14 @@ pub struct CommandProcessor<'a> {
 
 impl<'a> CommandProcessor<'a> {
     pub fn new() -> CommandProcessor<'a> {
-        CommandProcessor {
-            commands: HashMap::from([
+        let mut processor = CommandProcessor {
+            commands: HashMap::new(),
+            power_state: PowerState::PowerOff,
+        };
+
+        let actual_commands = HashMap::from([
                 ("SNO",Param::new("1234567890","")),
-                ("PWR", Param::new("00", ON_OFF)),
+                //("PWR", Param::new("00", ON_OFF)),
                 /*
                 ("SIGNAL",Param::new("01","")),
                 ("ONTIME",Param::new("110","")),
@@ -158,44 +164,76 @@ impl<'a> CommandProcessor<'a> {
                 ("VREVERSE", Param::new("ON", ON_OFF)),
                 ("IMGSHIFT", Param::new("0 1", "-?[0-2] -?[0-2]")),
                 ("REFRESHTIME", Param::new("00", TWO_DIGITS)) */
-            ]),
-            power_state: PowerState::PowerOff,
-        }
+            ]);
+
+        processor.commands = actual_commands;
+        processor
     }
 
-    fn process_query(&self, command: &str) -> Option<String> {
-        if let Some(param) = self.commands.get(command) {
-            param.get_value()
+    fn process_power_set(&mut self, value: &str) -> Result<(), CommandError> {
+        if value == "ON" {
+            self.power_state.power_up();
+        } else if value == "OFF" {
+            self.power_state.power_down();
         } else {
-            None
+            return Err(CommandError::InvalidCommand);
         }
+        // This is always empty
+        Ok(())
     }
 
-    fn process_set(&mut self, command: &str, value: &str) -> Option<String> {
-        let param = self.commands.get_mut(command).unwrap();
-        if param.set_value(value) {
-            param.get_value()
+    fn process_power_query(&mut self) -> Option<String> {
+        Some(self.power_state.as_str().to_string())
+    }
+
+    fn process_query(&mut self, command: &str) -> Result<Option<String>, CommandError> {
+        if command == "PWR" {
+            Ok(self.process_power_query())
         } else {
-            None
+            if let Some(param) = self.commands.get(command) {
+                if let PowerState::LampOn = self.power_state.get_state() {
+                    Ok(param.get_value())
+                } else {
+                    Err(CommandError::InvalidPowerState)
+                }
+            } else {
+                Err(CommandError::InvalidCommand)
+            }
         }
     }
 
-    // Regex match ([A-Z][A-Z0-9]+)
+    fn process_set(&mut self, command: &str, value: &str) -> Result<(), CommandError> {
+        if command == "PWR" {
+            self.process_power_set(value)
+        } else {
+            if let Some(param) = self.commands.get_mut(command) {
+                if param.set_value(value)  {
+                    Ok(())
+                } else {
+                    Err(CommandError::InvalidValue)
+                }
+            } else {
+                Err(CommandError::InvalidCommand)
+            }
+        }
+    }
 
     pub fn process_message(&mut self, message: &str) -> Result<Option<String>, CommandError> {
         if message.ends_with("?\r") {
             let result = self.process_query(&message[0..message.len()-2]);
-            if result.is_none() {
-                Err(CommandError::InvalidQuery)
-            } else {
-                Ok(result)
+            match &result {
+                Ok(Some(_)) => result,
+                Ok(None) => Err(CommandError::InvalidQuery),
+                // Either Ok(Some(_)) or Err(_) would have been needed to be copied. I took Err as it is rare event
+                Err(err) => Err(err.clone()),
             }
         } else {
             let result = Regex::new("([A-Z][A-Z0-9]+) (.+)").unwrap().captures(message).map(|cap| {
                 let command = cap.get(0).ok_or(CommandError::InvalidCommand)?;
                 let value = cap.get(1).ok_or(CommandError::InvalidValue)?;
 
-                Ok(self.process_set(command.as_str(), value.as_str()))
+                self.process_set(command.as_str(), value.as_str())?;
+                Ok(None)
             }).unwrap();
             result
         }
