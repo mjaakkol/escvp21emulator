@@ -8,18 +8,32 @@ use std::{
 use regex::Regex;
 use thiserror::Error;
 
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum CommandError {
+    #[error("Invalid command")]
+    InvalidCommand,
+    #[error("Invalid query")]
+    InvalidQuery,
+    #[error("Invalid value")]
+    InvalidValue,
+    #[error("Invalid power state")]
+    InvalidPowerState,
+}
+
 pub struct Param<'a> {
     default: &'a str,
     value: String,
     validation: Regex,
+    supported_in_power_off: bool,
 }
 
 impl<'a> Param<'a> {
-    fn new(default: &'a str, validation: &str) -> Param<'a> {
+    fn new(default: &'a str, validation: &str, supported_in_power_off: bool) -> Param<'a> {
         Param {
             default,
             value: default.to_string(),
             validation: Regex::new(validation).unwrap(),
+            supported_in_power_off
         }
     }
 
@@ -31,19 +45,25 @@ impl<'a> Param<'a> {
         }
     }
 
-    pub fn set_value(&mut self, value: &str) -> bool {
+    #[inline]
+    pub fn supported_in_power_off(&self) -> bool {
+        self.supported_in_power_off
+    }
+
+    pub fn set_value(&mut self, value: &str) -> Result<(), CommandError> {
         if self.validation.is_match(value) {
             if value == "INIT" {
                 self.value = self.default.to_string();
             } else {
                 self.value = value.to_string();
             }
-            true
+            Ok(())
         } else {
-            false
+            Err(CommandError::InvalidValue)
         }
     }
 
+    #[inline]
     pub fn get_validation(&self) -> &Regex {
         &self.validation
     }
@@ -121,18 +141,7 @@ const TWO_CHARS: &str = "[A-Z0-9]{2}";
 const TWO_DIGITS: &str = "\\d{2}";
 const ON_OFF: &str = "(OFF|ON)";
 
-#[derive(Error, Debug, Clone)]
-pub enum CommandError {
-    #[error("Invalid command")]
-    InvalidCommand,
-    #[error("Invalid query")]
-    InvalidQuery,
-    #[error("Invalid value")]
-    InvalidValue,
-    #[error("Invalid power state")]
-    InvalidPowerState,
-}
-
+const LAMP_HOURS_DEFAULT: &str = "100";
 
 pub struct CommandProcessor<'a> {
     commands: HashMap<&'static str, Param<'a>>,
@@ -147,8 +156,9 @@ impl<'a> CommandProcessor<'a> {
         };
 
         let actual_commands = HashMap::from([
-                ("SNO",Param::new("1234567890","")),
+                ("SNO",Param::new("1234567890","", true)),
                 //("PWR", Param::new("00", ON_OFF)),
+                ("LAMP",Param::new(LAMP_HOURS_DEFAULT,"", false)),
                 /*
                 ("SIGNAL",Param::new("01","")),
                 ("ONTIME",Param::new("110","")),
@@ -191,10 +201,9 @@ impl<'a> CommandProcessor<'a> {
             Ok(self.process_power_query())
         } else {
             if let Some(param) = self.commands.get(command) {
-                if let PowerState::LampOn = self.power_state.get_state() {
-                    Ok(param.get_value())
-                } else {
-                    Err(CommandError::InvalidPowerState)
+                match (param.supported_in_power_off(), self.power_state.get_state()) {
+                    (true, _) | (false, PowerState::LampOn) => Ok(param.get_value()),
+                    _ => Err(CommandError::InvalidPowerState),
                 }
             } else {
                 Err(CommandError::InvalidCommand)
@@ -207,10 +216,9 @@ impl<'a> CommandProcessor<'a> {
             self.process_power_set(value)
         } else {
             if let Some(param) = self.commands.get_mut(command) {
-                if param.set_value(value)  {
-                    Ok(())
-                } else {
-                    Err(CommandError::InvalidValue)
+                match (param.supported_in_power_off(), self.power_state.get_state()) {
+                    (true, _) | (false, PowerState::LampOn) => param.set_value(value),
+                    _ => return Err(CommandError::InvalidPowerState),
                 }
             } else {
                 Err(CommandError::InvalidCommand)
@@ -275,5 +283,16 @@ mod tests {
         assert_eq!(processor.process_message("PWR?").unwrap(), Some("03".to_string()));
         std::thread::sleep(COOLDOWN_TIME);
         assert_eq!(processor.process_message("PWR?").unwrap(), Some("00".to_string()));
+    }
+
+    #[test]
+    fn test_power_state_logic() {
+        let mut processor = CommandProcessor::new();
+        assert_eq!(processor.process_message("SNO?").unwrap().is_some(), true);
+        assert_eq!(processor.process_message("LAMP?"), Err(CommandError::InvalidPowerState));
+        assert_eq!(processor.process_message("PWR ON").unwrap(), None);
+        assert_eq!(processor.process_message("LAMP?"), Err(CommandError::InvalidPowerState));
+        std::thread::sleep(WARMING_TIME);
+        assert_eq!(processor.process_message("LAMP?").unwrap(), Some(LAMP_HOURS_DEFAULT.to_string()));
     }
 }
