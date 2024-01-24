@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use crate::{
     codec,
-    commands::CommandProcessor,
+    commands::CommandProcessor
 };
 
 pub struct Epsonlib<'a, T: 'a + Read + Write> {
@@ -27,20 +27,26 @@ impl<'a, T: 'a + Read + Write> Epsonlib<'a, T> {
             match self.port.read(serial_buf.as_mut_slice()) {
                 Ok(t) => {
                     if t > 0 {
-                        println!("Read {} bytes: {:?}", t, &serial_buf[..t]);
-                        match codec.decode(&mut serial_buf[..t]) {
+                        let result = match codec.decode(&mut serial_buf[..t]) {
                             Ok(Some(s)) => {
-                                self.print(&s);
                                 match processor.process_message(&s) {
-                                    Ok(Some(s)) => {
-                                        self.port.write(s.as_bytes()).unwrap();
+                                    Ok(Some(s)) => Some(format!("{s}\r:")),
+                                    Ok(None) => Some(String::from("\r:")),
+                                    Err(e) => {
+                                        eprintln!("Projector error {:?}", e);
+                                        Some(String::from("ERR\r:"))
                                     },
-                                    Ok(None) => (),
-                                    Err(e) => eprintln!("{:?}", e),
                                 }
                             }
-                            Ok(None) => (),
-                            Err(e) => eprintln!("{:?}", e),
+                            Ok(None) => None,
+                            Err(e) => {
+                                eprintln!("Error: {:?}", e);
+                                None
+                            }
+                        };
+
+                        if let Some(result) = result {
+                            self.port.write(result.as_bytes()).unwrap();
                         }
                     }
                 }
@@ -52,5 +58,36 @@ impl<'a, T: 'a + Read + Write> Epsonlib<'a, T> {
 
     pub fn print(&self, text: &str) {
         println!("Epson: {}", text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serialport::TTYPort;
+
+    #[test]
+    fn test_transaction() {
+        let (mut master, mut slave) = TTYPort::pair().unwrap();
+
+        std::thread::spawn(move || {
+            let mut epson = Epsonlib::new(&mut slave);
+            epson.run_until();
+        });
+
+        master.write(b"SNO?\r").unwrap();
+
+        let mut buf: Vec<u8> = vec![0; 128];
+        let t = master.read(buf.as_mut_slice()).unwrap();
+        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
+        assert_eq!(output, "1234567890\r:");
+
+        // Testing error case
+        master.write(b"SNO 1234567890\r").unwrap();
+
+        let t = master.read(buf.as_mut_slice()).unwrap();
+        println!("Read {} bytes: {:?}", t, &buf[..t]);
+        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
+        assert_eq!(output, "ERR\r:");
     }
 }
