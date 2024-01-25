@@ -4,9 +4,7 @@ use clap::{
     Subcommand
 };
 use serialport::{
-    SerialPort,
     SerialPortType::UsbPort,
-    new,
     available_ports,
 };
 
@@ -21,11 +19,12 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// does testing things
+    /// All the available ports
     Ports,
+    /// Open a port for emulation
     Open {
         #[arg(short, long)]
-        link: String,
+        port: String,
         #[arg(short, long, default_value_t=9600 ,value_parser=clap::value_parser!(u32).range(1024..115200),)]
         baud_rate: u32,
     }
@@ -57,15 +56,15 @@ fn main() -> std::io::Result<()> {
 
                 println!("Available ports:\n{}", ports.join("\n"));
             },
-            Commands::Open { link, baud_rate } => {
-                let port = serialport::new(link, baud_rate)
+            Commands::Open { port, baud_rate } => {
+                let port = serialport::new(port, baud_rate)
                     .timeout(Duration::from_secs(60))
                     .open();
 
                 match port {
                     Ok(mut port) => {
 
-                        let mut epson = epsonemu::epsonlib::Epsonlib::new(&mut port);
+                        let mut epson = escvp21emulator::epsonlib::Epsonlib::new(&mut port);
 
                         epson.run_until();
                     }

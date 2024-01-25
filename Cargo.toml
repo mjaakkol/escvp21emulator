@@ -1,9 +1,9 @@
 [package]
-name = "epsonemu"
+name = "escvp21emulator"
 version = "0.1.0"
 authors = ["Mikko Jaakkola <mikko.la.jaakkola@gmail.com>"]
 license = "MIT OR Apache-2.0"
-description = "Epson projector emulator"
+description = "ESC VP21 emulator for Epson projectors"
 keywords = ["emulator", "epson", "esc/vp21"]
 categories = ["command-line-utilities", "emulators"]
 edition = "2021"
@@ -13,7 +13,7 @@ path = "src/lib.rs"
 
 [[bin]]
 path = "src/main.rs"
-name = "epsonemu"
+name = "escvp21emu"
 
 [dependencies]
 serialport = "4.3"
