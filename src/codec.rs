@@ -14,7 +14,7 @@ impl Codec {
         }
     }
 
-    pub fn decode(&mut self, src: &mut [u8]) -> Result<Option<String>, io::Error> {
+    pub fn decode(&mut self, src: &[u8]) -> Result<Option<String>, io::Error> {
         self.buffer.extend_from_slice(src);
         let newline = self.buffer.as_ref().iter().position(|b| *b == b'\r');
         if let Some(n) = newline {

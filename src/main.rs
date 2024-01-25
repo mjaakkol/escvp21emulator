@@ -14,7 +14,7 @@ fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
     let port = serialport::new(args.link, args.baud_rate)
-        .timeout(Duration::from_millis(10))
+        .timeout(Duration::from_secs(60))
         .open();
 
     match port {

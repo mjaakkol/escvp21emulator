@@ -27,37 +27,38 @@ impl<'a, T: 'a + Read + Write> Epsonlib<'a, T> {
             match self.port.read(serial_buf.as_mut_slice()) {
                 Ok(t) => {
                     if t > 0 {
-                        let result = match codec.decode(&mut serial_buf[..t]) {
+                        //println!("Read {} bytes: {:?}", t, &serial_buf[..t]);
+
+                        match codec.decode(&serial_buf[..t]) {
                             Ok(Some(s)) => {
+                                println!("Decoded: {:?}", s);
                                 match processor.process_message(&s) {
-                                    Ok(Some(s)) => Some(format!("{s}\r:")),
-                                    Ok(None) => Some(String::from("\r:")),
+                                    Ok(Some(output)) => {
+                                        println!("Output: {output}");
+                                        self.port.write(output.as_bytes()).unwrap();
+                                    },
+                                    Ok(None) => (),
                                     Err(e) => {
-                                        eprintln!("Projector error {:?}", e);
-                                        Some(String::from("ERR\r:"))
+                                        eprintln!("Projector error {:?} for command {s}", e);
+                                        self.port.write(b"ERR").unwrap();
                                     },
                                 }
+                                self.port.write(b"\r:").unwrap();
                             }
-                            Ok(None) => None,
-                            Err(e) => {
-                                eprintln!("Error: {:?}", e);
-                                None
-                            }
+                            Ok(None) => (),
+                            Err(e) => eprintln!("Error: {:?}", e),
                         };
-
-                        if let Some(result) = result {
-                            self.port.write(result.as_bytes()).unwrap();
-                        }
                     }
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => (),
-                Err(e) => eprintln!("{:?}", e),
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    eprintln!("timeout");
+                },
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    break;
+                }
             }
         }
-    }
-
-    pub fn print(&self, text: &str) {
-        println!("Epson: {}", text);
     }
 }
 

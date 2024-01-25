@@ -49,10 +49,10 @@ impl<'a> Param<'a> {
         }
     }
 
-    pub fn get_value(&self) -> Result<Option<String>, CommandError> {
+    pub fn get_value(&self) -> Result<String, CommandError> {
         if let Some(value) = &self.value {
             if value.len() > 0 {
-                return Ok(Some(value.clone()));
+                return Ok(value.clone());
             }
         }
         Err(CommandError::InvalidCommand)
@@ -84,7 +84,7 @@ impl<'a> Param<'a> {
     }
 }
 
-const WARMING_TIME: Duration = Duration::from_secs(5);
+const WARMING_TIME: Duration = Duration::from_secs(10);
 const COOLDOWN_TIME: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
@@ -102,12 +102,19 @@ impl PowerState {
             // This ensures that timer effect becomes visible if expired
             PowerState::Warming(timer) => {
                 if timer.elapsed().unwrap() > WARMING_TIME {
+                    println!("Warm up complete");
                     *self = PowerState::LampOn;
+                } else {
+                    println!("Warming: {:?}", timer.elapsed().unwrap());
                 }
+
             },
             PowerState::Cooling(timer) => {
                 if timer.elapsed().unwrap() > COOLDOWN_TIME {
                     *self = PowerState::PowerOff;
+                    println!("Cool down complete");
+                } else {
+                    println!("Cooling: {:?}", timer.elapsed().unwrap());
                 }
             },
             _ => (),
@@ -141,9 +148,9 @@ impl PowerState {
     pub fn as_str(&mut self) -> &'static str {
         match self.get_state() {
             PowerState::PowerOff => "00",
-            PowerState::Warming(_) => "01",
+            PowerState::Warming(_) => "02",
             PowerState::Cooling(_) => "03",
-            PowerState::LampOn => "02",
+            PowerState::LampOn => "01",
         }
     }
 }
@@ -175,21 +182,22 @@ impl<'a> CommandProcessor<'a> {
                 //("PWR", Param::new("00", ON_OFF)),
                 ("LAMP",Param::new(LAMP_HOURS_DEFAULT,"", false)),
                 ("KEY", Param::new("", "[A-Z0-9]{2}|INIT", false)),
+                ("FREEZE", Param::new("OFF", ON_OFF, false)),
+                ("FASTBOOT", Param::new("01", TWO_DIGITS, false)),
                 ("AUTOHOME",Param::new(AUTOHOME_DEFAULT,TWO_CHARS, false)),
-                /*
-                ("SIGNAL",Param::new("01","")),
-                ("ONTIME",Param::new("110","")),
-                ("LAMP",Param::new("100","")),
-                ("ERR",Param::new("00","")),
-                ("SOURCE",Param::new("00",TWO_CHARS)),
-                ("MUTE",Param::new("0000",ON_OFF)),
-                ("VOL",Param::new("90","\\d+")),
-                ("AUTOHOME",Param::new("00",TWO_CHARS)),
-                ("ZOOM",Param::new("0","\\d{1,3}")),
-                ("HREVERSE", Param::new("ON",ON_OFF)),
-                ("VREVERSE", Param::new("ON", ON_OFF)),
-                ("IMGSHIFT", Param::new("0 1", "-?[0-2] -?[0-2]")),
-                ("REFRESHTIME", Param::new("00", TWO_DIGITS)) */
+                ("SIGNAL",Param::new("01","", false)),
+                ("ONTIME",Param::new("110","", false)),
+                ("LAMP",Param::new("100","", false)),
+                ("ERR",Param::new("00","", true)),
+                ("SOURCE",Param::new("00",TWO_CHARS, false)),
+                ("MUTE",Param::new("0000",ON_OFF, false)),
+                ("VOL",Param::new("90","\\d+", false)),
+                ("AUTOHOME",Param::new("00",TWO_CHARS, false)),
+                ("ZOOM",Param::new("0","\\d{1,3}", false)),
+                ("HREVERSE", Param::new("ON",ON_OFF, false)),
+                ("VREVERSE", Param::new("ON", ON_OFF, false)),
+                ("IMGSHIFT", Param::new("0 1", "-?[0-2] -?[0-2]", false)),
+                ("REFRESHTIME", Param::new("00", TWO_DIGITS, false))
             ]);
 
         processor.commands = actual_commands;
@@ -208,13 +216,13 @@ impl<'a> CommandProcessor<'a> {
         Ok(())
     }
 
-    fn process_power_query(&mut self) -> Option<String> {
-        Some(self.power_state.as_str().to_string())
+    fn process_power_query(&mut self) -> &'static str {
+        &self.power_state.get_state().as_str()
     }
 
-    fn process_query(&mut self, command: &str) -> Result<Option<String>, CommandError> {
-        if command == "PWR" {
-            Ok(self.process_power_query())
+    fn process_query(&mut self, command: &str) -> Result<String, CommandError> {
+        let value = if command == "PWR" {
+            Ok(self.process_power_query().to_string())
         } else {
             if let Some(param) = self.commands.get(command) {
                 match (param.supported_in_power_off(), self.power_state.get_state()) {
@@ -224,7 +232,8 @@ impl<'a> CommandProcessor<'a> {
             } else {
                 Err(CommandError::InvalidCommand)
             }
-        }
+        }?;
+        Ok(format!("{command}={value}"))
     }
 
     fn process_set(&mut self, command: &str, value: &str) -> Result<(), CommandError> {
@@ -244,13 +253,16 @@ impl<'a> CommandProcessor<'a> {
 
     pub fn process_message(&mut self, message: &str) -> Result<Option<String>, CommandError> {
         if message.ends_with("?") {
+            let result = self.process_query(&message[0..message.len()-1])?;
+            Ok(Some(result))
+            /*
             let result = self.process_query(&message[0..message.len()-1]);
             match &result {
                 Ok(Some(_)) => result,
                 Ok(None) => Err(CommandError::InvalidQuery),
                 // Either Ok(Some(_)) or Err(_) would have been needed to be copied. I took Err as it is rare event
                 Err(err) => Err(err.clone()),
-            }
+            }*/
         } else {
             let result = Regex::new("([A-Z][A-Z0-9]+) (.+)").unwrap().captures(message).map(|cap| {
                 let command = cap.get(1).ok_or(CommandError::InvalidCommand)?;
@@ -319,11 +331,11 @@ mod tests {
         assert_eq!(processor.process_message("SNO 1234567890"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("PWR ON").unwrap(), None);
         std::thread::sleep(WARMING_TIME);
-        assert_eq!(processor.process_message("SNO?").unwrap(), Some("1234567890".to_string()));
+        assert_eq!(processor.process_message("SNO?").unwrap(), Some("SNO=1234567890".to_string()));
         assert_eq!(processor.process_message("SNO 123456789"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("KEY 01").unwrap(), None);
         assert_eq!(processor.process_message("KEY?"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("AUTOHOME 01").unwrap(), None);
-        assert_eq!(processor.process_message("AUTOHOME?").unwrap(), Some("01".to_string()));
+        assert_eq!(processor.process_message("AUTOHOME?").unwrap(), Some("AUTOHOME=01".to_string()));
     }
 }
