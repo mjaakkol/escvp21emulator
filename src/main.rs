@@ -1,31 +1,79 @@
 use std::time::Duration;
-use clap::Parser;
+use clap::{
+    Parser,
+    Subcommand
+};
+use serialport::{
+    SerialPort,
+    SerialPortType::UsbPort,
+    new,
+    available_ports,
+};
 
-#[derive(Parser, Debug)]
+
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long)]
-    link: String,
-    #[arg(short, long, default_value_t=9600 ,value_parser=clap::value_parser!(u32).range(1024..115200),)]
-    baud_rate: u32,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// does testing things
+    Ports,
+    Open {
+        #[arg(short, long)]
+        link: String,
+        #[arg(short, long, default_value_t=9600 ,value_parser=clap::value_parser!(u32).range(1024..115200),)]
+        baud_rate: u32,
+    }
 }
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
 
-    let port = serialport::new(args.link, args.baud_rate)
-        .timeout(Duration::from_secs(60))
-        .open();
+    if let Some(command) = args.command {
+        match command {
+            Commands::Ports => {
+                let ports = available_ports().map_err(|e |{
+                    eprintln!("{e:?}");
+                    std::io::Error::new(std::io::ErrorKind::Other, "Error getting ports")
+                })?.iter()
+                    .map(|p| {
+                        if let UsbPort(port) = &p.port_type {
+                            if let Some(manufacturer) = port.manufacturer.as_ref() {
+                                format!("{} - {}", p.port_name, manufacturer)
+                            } else {
+                                format!("{} - USB", p.port_name)
+                            }
+                        }
+                        else {
+                            format!("{} - Unknown", p.port_name)
+                        }
+                    })
+                    .collect::<Vec<String>>();
 
-    match port {
-        Ok(mut port) => {
+                println!("Available ports:\n{}", ports.join("\n"));
+            },
+            Commands::Open { link, baud_rate } => {
+                let port = serialport::new(link, baud_rate)
+                    .timeout(Duration::from_secs(60))
+                    .open();
 
-            let mut epson = epsonemu::epsonlib::Epsonlib::new(&mut port);
+                match port {
+                    Ok(mut port) => {
 
-            epson.run_until();
-        }
-        Err(e) => {
-            eprintln!("{:?}", e);
+                        let mut epson = epsonemu::epsonlib::Epsonlib::new(&mut port);
+
+                        epson.run_until();
+                    }
+                    Err(e) => {
+                        eprintln!("{:?}", e);
+                    }
+                }
+            }
         }
     }
 
