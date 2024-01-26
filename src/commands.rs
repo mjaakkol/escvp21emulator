@@ -84,8 +84,6 @@ impl<'a> Param<'a> {
     }
 }
 
-const WARMING_TIME: Duration = Duration::from_secs(10);
-const COOLDOWN_TIME: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone)]
 pub enum PowerState {
@@ -97,32 +95,6 @@ pub enum PowerState {
 
 
 impl PowerState {
-    pub fn get_state(&mut self) -> PowerState {
-        match self {
-            // This ensures that timer effect becomes visible if expired
-            PowerState::Warming(timer) => {
-                if timer.elapsed().unwrap() > WARMING_TIME {
-                    println!("Warm up complete");
-                    *self = PowerState::LampOn;
-                } else {
-                    println!("Warming: {:?}", timer.elapsed().unwrap());
-                }
-
-            },
-            PowerState::Cooling(timer) => {
-                if timer.elapsed().unwrap() > COOLDOWN_TIME {
-                    *self = PowerState::PowerOff;
-                    println!("Cool down complete");
-                } else {
-                    println!("Cooling: {:?}", timer.elapsed().unwrap());
-                }
-            },
-            _ => (),
-        }
-
-        self.clone()
-    }
-
     pub fn power_up(&mut self) {
         match self {
             PowerState::PowerOff => {
@@ -145,8 +117,8 @@ impl PowerState {
         }
     }
 
-    pub fn as_str(&mut self) -> &'static str {
-        match self.get_state() {
+    pub fn as_str(&self) -> &'static str {
+        match self {
             PowerState::PowerOff => "00",
             PowerState::Warming(_) => "02",
             PowerState::Cooling(_) => "03",
@@ -168,13 +140,17 @@ const AUTOHOME_DEFAULT: &str = "00";
 pub struct CommandProcessor<'a> {
     commands: HashMap<&'static str, Param<'a>>,
     power_state: PowerState,
+    warming: Duration,
+    cooling: Duration
 }
 
 impl<'a> CommandProcessor<'a> {
-    pub fn new() -> CommandProcessor<'a> {
+    pub fn new(warming: u64, cooling: u64) -> CommandProcessor<'a> {
         let mut processor = CommandProcessor {
             commands: HashMap::new(),
             power_state: PowerState::PowerOff,
+            warming: Duration::from_secs(warming),
+            cooling: Duration::from_secs(cooling)
         };
 
         let actual_commands = HashMap::from([
@@ -217,15 +193,41 @@ impl<'a> CommandProcessor<'a> {
     }
 
     fn process_power_query(&mut self) -> &'static str {
-        &self.power_state.get_state().as_str()
+        &self.get_power_state().as_str()
+    }
+
+    fn get_power_state(&mut self) -> PowerState {
+        match self.power_state {
+            // This ensures that timer effect becomes visible if expired
+            PowerState::Warming(timer) => {
+                if timer.elapsed().unwrap() > self.warming {
+                    println!("Warm up complete");
+                    self.power_state = PowerState::LampOn;
+                } else {
+                    println!("Warming: {:?}", timer.elapsed().unwrap());
+                }
+
+            },
+            PowerState::Cooling(timer) => {
+                if timer.elapsed().unwrap() > self.cooling {
+                    self.power_state = PowerState::PowerOff;
+                    println!("Cool down complete");
+                } else {
+                    println!("Cooling: {:?}", timer.elapsed().unwrap());
+                }
+            },
+            _ => (),
+        }
+        self.power_state.clone()
     }
 
     fn process_query(&mut self, command: &str) -> Result<String, CommandError> {
         let value = if command == "PWR" {
             Ok(self.process_power_query().to_string())
         } else {
+            let power_state = self.get_power_state();
             if let Some(param) = self.commands.get(command) {
-                match (param.supported_in_power_off(), self.power_state.get_state()) {
+                match (param.supported_in_power_off(), power_state) {
                     (true, _) | (false, PowerState::LampOn) => param.get_value(),
                     _ => Err(CommandError::InvalidPowerState),
                 }
@@ -240,8 +242,10 @@ impl<'a> CommandProcessor<'a> {
         if command == "PWR" {
             self.process_power_set(value)
         } else {
+            let power_state = self.get_power_state();
+
             if let Some(param) = self.commands.get_mut(command) {
-                match (param.supported_in_power_off(), self.power_state.get_state()) {
+                match (param.supported_in_power_off(), power_state) {
                     (true, _) | (false, PowerState::LampOn) => param.set_value(value),
                     _ => return Err(CommandError::InvalidPowerState),
                 }
@@ -280,57 +284,40 @@ impl<'a> CommandProcessor<'a> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_enum() {
-        let mut state = PowerState::PowerOff;
-        assert_eq!(state.as_str(), "00");
-        state.power_up();
-        assert_eq!(state.as_str(), "01");
-        state.power_up();
-        assert_eq!(state.as_str(), "01");
-        std::thread::sleep(WARMING_TIME);
-        assert_eq!(state.as_str(), "02");
-        state.power_down();
-        assert_eq!(state.as_str(), "03");
-        state.power_down();
-        assert_eq!(state.as_str(), "03");
-        std::thread::sleep(COOLDOWN_TIME);
-        assert_eq!(state.as_str(), "00");
-        state.power_down();
-        assert_eq!(state.as_str(), "00");
-    }
+    const WARMING_TIME: u64 = 2;
+    const COOLDOWN_TIME: u64 = 1;
 
     #[test]
     fn test_power_command() {
-        let mut processor = CommandProcessor::new();
+        let mut processor = CommandProcessor::new(WARMING_TIME, COOLDOWN_TIME);
         assert_eq!(processor.process_message("PWR ON").unwrap(), None);
-        assert_eq!(processor.process_message("PWR?").unwrap(), Some("01".to_string()));
-        std::thread::sleep(WARMING_TIME);
-        assert_eq!(processor.process_message("PWR?").unwrap(), Some("02".to_string()));
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("PWR=02".to_string()));
+        std::thread::sleep(Duration::from_secs(WARMING_TIME));
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("PWR=01".to_string()));
         assert_eq!(processor.process_message("PWR OFF").unwrap(), None);
-        assert_eq!(processor.process_message("PWR?").unwrap(), Some("03".to_string()));
-        std::thread::sleep(COOLDOWN_TIME);
-        assert_eq!(processor.process_message("PWR?").unwrap(), Some("00".to_string()));
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("PWR=03".to_string()));
+        std::thread::sleep(Duration::from_secs(COOLDOWN_TIME));
+        assert_eq!(processor.process_message("PWR?").unwrap(), Some("PWR=00".to_string()));
     }
 
     #[test]
     fn test_power_state_logic() {
-        let mut processor = CommandProcessor::new();
+        let mut processor = CommandProcessor::new(WARMING_TIME, COOLDOWN_TIME);
         assert_eq!(processor.process_message("SNO?").unwrap().is_some(), true);
         assert_eq!(processor.process_message("LAMP?"), Err(CommandError::InvalidPowerState));
         assert_eq!(processor.process_message("PWR ON").unwrap(), None);
         assert_eq!(processor.process_message("LAMP?"), Err(CommandError::InvalidPowerState));
-        std::thread::sleep(WARMING_TIME);
-        assert_eq!(processor.process_message("LAMP?").unwrap(), Some(LAMP_HOURS_DEFAULT.to_string()));
+        std::thread::sleep(Duration::from_secs(WARMING_TIME));
+        assert_eq!(processor.process_message("LAMP?").unwrap(), Some(format!("LAMP={LAMP_HOURS_DEFAULT}")));
     }
 
     #[test]
     fn test_set_get() {
-        let mut processor = CommandProcessor::new();
+        let mut processor = CommandProcessor::new(WARMING_TIME, COOLDOWN_TIME);
         assert_eq!(processor.process_message("SNO?").unwrap().is_some(), true);
         assert_eq!(processor.process_message("SNO 1234567890"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("PWR ON").unwrap(), None);
-        std::thread::sleep(WARMING_TIME);
+        std::thread::sleep(Duration::from_secs(WARMING_TIME));
         assert_eq!(processor.process_message("SNO?").unwrap(), Some("SNO=1234567890".to_string()));
         assert_eq!(processor.process_message("SNO 123456789"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("KEY 01").unwrap(), None);

@@ -27,6 +27,10 @@ enum Commands {
         port: String,
         #[arg(short, long, default_value_t=9600 ,value_parser=clap::value_parser!(u32).range(1024..115200),)]
         baud_rate: u32,
+        #[arg(short, long, default_value_t=20)]
+        warming: u32,
+        #[arg(short, long, default_value_t=5)]
+        cooling: u32,
     }
 }
 
@@ -38,7 +42,7 @@ fn main() -> std::io::Result<()> {
             Commands::Ports => {
                 let ports = available_ports().map_err(|e |{
                     eprintln!("{e:?}");
-                    std::io::Error::new(std::io::ErrorKind::Other, "Error getting ports")
+                    std::io::Error::new(std::io::ErrorKind::Other, "Error getting available ports")
                 })?.iter()
                     .map(|p| {
                         if let UsbPort(port) = &p.port_type {
@@ -56,22 +60,12 @@ fn main() -> std::io::Result<()> {
 
                 println!("Available ports:\n{}", ports.join("\n"));
             },
-            Commands::Open { port, baud_rate } => {
+            Commands::Open { port, baud_rate,warming, cooling } => {
                 let port = serialport::new(port, baud_rate)
                     .timeout(Duration::from_secs(60))
-                    .open();
+                    .open()?;
 
-                match port {
-                    Ok(mut port) => {
-
-                        let mut epson = escvp21emulator::epsonlib::Epsonlib::new(&mut port);
-
-                        epson.run_until();
-                    }
-                    Err(e) => {
-                        eprintln!("{:?}", e);
-                    }
-                }
+                escvp21emulator::escvp21::start(port, cooling, warming);
             }
         }
     }
