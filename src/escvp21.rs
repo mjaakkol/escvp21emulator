@@ -2,10 +2,7 @@ use std::io::{Read, Write, Error, ErrorKind};
 use bytes::BytesMut;
 
 
-use crate::{
-    codec,
-    commands::CommandProcessor
-};
+use crate::commands::CommandProcessor;
 
 
 pub struct Codec {
@@ -41,7 +38,7 @@ impl Codec {
 
 pub fn start<T: Read + Write>(mut port: T, warming: u32, cooling: u32) {
     let mut serial_buf: Vec<u8> = vec![0; 128];
-    let mut codec = codec::Codec::new();
+    let mut codec = Codec::new();
 
     let mut processor = CommandProcessor::new(warming as u64, cooling as u64);
     loop {
