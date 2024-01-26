@@ -139,12 +139,20 @@ mod tests {
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
         assert_eq!(output, "SNO=1234567890");
 
+        let t = master.read(buf.as_mut_slice()).unwrap();
+        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
+        assert_eq!(output, "\r:");
+
         // Testing error case
         master.write(b"SNO 1234567890\r").unwrap();
 
         let t = master.read(buf.as_mut_slice()).unwrap();
-        println!("Read {} bytes: {:?}", t, &buf[..t]);
+        //println!("Read {} bytes: {:?}", t, &buf[..t]);
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
         assert_eq!(output, "ERR");
+
+        let t = master.read(buf.as_mut_slice()).unwrap();
+        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
+        assert_eq!(output, "\r:");
     }
 }
