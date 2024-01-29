@@ -128,8 +128,6 @@ impl PowerState {
 }
 
 
-
-
 const TWO_CHARS: &str = "[A-Z0-9]{2}";
 const TWO_DIGITS: &str = "\\d{2}";
 const ON_OFF: &str = "(OFF|ON)";
@@ -259,14 +257,6 @@ impl<'a> CommandProcessor<'a> {
         if message.ends_with("?") {
             let result = self.process_query(&message[0..message.len()-1])?;
             Ok(Some(result))
-            /*
-            let result = self.process_query(&message[0..message.len()-1]);
-            match &result {
-                Ok(Some(_)) => result,
-                Ok(None) => Err(CommandError::InvalidQuery),
-                // Either Ok(Some(_)) or Err(_) would have been needed to be copied. I took Err as it is rare event
-                Err(err) => Err(err.clone()),
-            }*/
         } else {
             let result = Regex::new("([A-Z][A-Z0-9]+) (.+)").unwrap().captures(message).map(|cap| {
                 let command = cap.get(1).ok_or(CommandError::InvalidCommand)?;
