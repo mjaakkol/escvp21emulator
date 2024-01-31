@@ -12,16 +12,15 @@ use serialport::{
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-
     #[command(subcommand)]
     command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// All the available ports
+    /// Retrieves all the available ports
     Ports,
-    /// Open a port for emulation
+    /// Open a given port for emulation
     Open {
         #[arg(short, long)]
         port: String,
