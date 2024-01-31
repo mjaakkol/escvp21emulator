@@ -52,16 +52,18 @@ pub fn start<T: Read + Write>(mut port: T, warming: u32, cooling: u32) {
                             println!("Decoded: {:?}", s);
                             match processor.process_message(&s) {
                                 Ok(Some(output)) => {
-                                    println!("Output: {output}");
-                                    port.write(output.as_bytes()).unwrap();
+                                    //println!("Output: {output}");
+                                    let mut buffer = BytesMut::with_capacity(output.len()+2);
+                                    buffer.extend_from_slice(output.as_bytes());
+                                    buffer.extend_from_slice(b"\r:");
+                                    port.write(&buffer.as_ref())
                                 },
-                                Ok(None) => (),
+                                Ok(None) => port.write(b"\r:"),
                                 Err(e) => {
                                     eprintln!("Projector error {:?} for command {s}", e);
-                                    port.write(b"ERR").unwrap();
+                                    port.write(b"ERR\r:")
                                 },
-                            }
-                            port.write(b"\r:").unwrap();
+                            }.expect("Failed to send data back. Exiting...");
                         }
                         Ok(None) => (),
                         Err(e) => eprintln!("Error: {:?}", e),
@@ -134,11 +136,7 @@ mod tests {
         let mut buf: Vec<u8> = vec![0; 128];
         let t = master.read(buf.as_mut_slice()).unwrap();
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "SNO=1234567890");
-
-        let t = master.read(buf.as_mut_slice()).unwrap();
-        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "\r:");
+        assert_eq!(output, "SNO=1234567890\r:");
 
         // Testing error case
         master.write(b"SNO 1234567890\r").unwrap();
@@ -146,10 +144,6 @@ mod tests {
         let t = master.read(buf.as_mut_slice()).unwrap();
         //println!("Read {} bytes: {:?}", t, &buf[..t]);
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "ERR");
-
-        let t = master.read(buf.as_mut_slice()).unwrap();
-        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "\r:");
+        assert_eq!(output, "ERR\r:");
     }
 }
