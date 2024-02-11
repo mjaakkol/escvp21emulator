@@ -1,9 +1,8 @@
 use std::io::{Read, Write, Error, ErrorKind};
 use bytes::BytesMut;
-
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 use crate::commands::CommandProcessor;
-
 
 pub struct Codec {
     // private
@@ -81,47 +80,42 @@ pub fn start<T: Read + Write>(mut port: T, warming: u32, cooling: u32) {
     }
 }
 
+pub struct VirtualPort{
+    receiver: Receiver<Vec<u8>>,
+    sender: Sender<Vec<u8>>,
+}
+
+impl VirtualPort {
+    pub fn pair() -> (VirtualPort, VirtualPort) {
+        let (sender1, receiver1) = channel();
+        let (sender2, receiver2) = channel();
+        (VirtualPort { receiver: receiver1, sender: sender2 }, VirtualPort { receiver: receiver2, sender: sender1 })
+    }
+}
+
+impl Read for VirtualPort {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        let data = self.receiver.recv().unwrap();
+        let len = data.len();
+        buf[..len].copy_from_slice(&data);
+        Ok(len)
+    }
+}
+
+impl Write for VirtualPort {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.sender.send(buf.to_vec()).unwrap();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    //use serialport::TTYPort;
-
-    use std::sync::mpsc::{channel, Sender, Receiver};
-
-    struct VirtualPort{
-        receiver: Receiver<Vec<u8>>,
-        sender: Sender<Vec<u8>>,
-    }
-
-    impl VirtualPort {
-        fn pair() -> (VirtualPort, VirtualPort) {
-            let (sender1, receiver1) = channel();
-            let (sender2, receiver2) = channel();
-            (VirtualPort { receiver: receiver1, sender: sender2 }, VirtualPort { receiver: receiver2, sender: sender1 })
-        }
-    }
-
-    impl Read for VirtualPort {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-            let data = self.receiver.recv().unwrap();
-            let len = data.len();
-            buf[..len].copy_from_slice(&data);
-            Ok(len)
-        }
-    }
-
-    impl Write for VirtualPort {
-        fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-            self.sender.send(buf.to_vec()).unwrap();
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> Result<(), Error> {
-            Ok(())
-        }
-    }
-
 
     #[test]
     fn test_transaction() {
