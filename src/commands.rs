@@ -324,5 +324,9 @@ mod tests {
         assert_eq!(processor.process_message("KEY?"), Err(CommandError::InvalidCommand));
         assert_eq!(processor.process_message("AUTOHOME 01").unwrap(), None);
         assert_eq!(processor.process_message("AUTOHOME?").unwrap(), Some("AUTOHOME=01".to_string()));
+        assert_eq!(processor.process_message("VOL?").unwrap(), Some("VOL=90".to_string()));
+        assert_eq!(processor.process_message("VOL 97").unwrap(), None);
+        assert_eq!(processor.process_message("VOL?").unwrap(), Some("VOL=97".to_string()));
+
     }
 }
