@@ -8,6 +8,7 @@ use std::{
 use regex::Regex;
 use thiserror::Error;
 
+/// Error type for command processing
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum CommandError {
     #[error("Invalid command")]
@@ -84,7 +85,7 @@ impl<'a> Param<'a> {
     }
 }
 
-
+/// Epson projector truncated power states (various standby modes ommited)
 #[derive(Debug, Clone)]
 pub enum PowerState {
     PowerOff,
@@ -135,6 +136,7 @@ const ON_OFF: &str = "(OFF|ON)";
 const LAMP_HOURS_DEFAULT: &str = "100";
 const AUTOHOME_DEFAULT: &str = "00";
 
+// Command processor for Epson projector and supported commands
 pub struct CommandProcessor<'a> {
     commands: HashMap<&'static str, Param<'a>>,
     power_state: PowerState,
