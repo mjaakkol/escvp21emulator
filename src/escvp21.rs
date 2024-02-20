@@ -1,9 +1,8 @@
 use std::io::{Read, Write, Error, ErrorKind};
 use bytes::BytesMut;
-
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 use crate::commands::CommandProcessor;
-
 
 pub struct Codec {
     // private
@@ -52,16 +51,18 @@ pub fn start<T: Read + Write>(mut port: T, warming: u32, cooling: u32) {
                             println!("Decoded: {:?}", s);
                             match processor.process_message(&s) {
                                 Ok(Some(output)) => {
-                                    println!("Output: {output}");
-                                    port.write(output.as_bytes()).unwrap();
+                                    //println!("Output: {output}");
+                                    let mut buffer = BytesMut::with_capacity(output.len()+2);
+                                    buffer.extend_from_slice(output.as_bytes());
+                                    buffer.extend_from_slice(b"\r:");
+                                    port.write(&buffer.as_ref())
                                 },
-                                Ok(None) => (),
+                                Ok(None) => port.write(b"\r:"),
                                 Err(e) => {
                                     eprintln!("Projector error {:?} for command {s}", e);
-                                    port.write(b"ERR").unwrap();
+                                    port.write(b"ERR\r:")
                                 },
-                            }
-                            port.write(b"\r:").unwrap();
+                            }.expect("Failed to send data back. Exiting...");
                         }
                         Ok(None) => (),
                         Err(e) => eprintln!("Error: {:?}", e),
@@ -79,47 +80,42 @@ pub fn start<T: Read + Write>(mut port: T, warming: u32, cooling: u32) {
     }
 }
 
+pub struct VirtualPort{
+    receiver: Receiver<Vec<u8>>,
+    sender: Sender<Vec<u8>>,
+}
+
+impl VirtualPort {
+    pub fn pair() -> (VirtualPort, VirtualPort) {
+        let (sender1, receiver1) = channel();
+        let (sender2, receiver2) = channel();
+        (VirtualPort { receiver: receiver1, sender: sender2 }, VirtualPort { receiver: receiver2, sender: sender1 })
+    }
+}
+
+impl Read for VirtualPort {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
+        let data = self.receiver.recv().unwrap();
+        let len = data.len();
+        buf[..len].copy_from_slice(&data);
+        Ok(len)
+    }
+}
+
+impl Write for VirtualPort {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
+        self.sender.send(buf.to_vec()).unwrap();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    //use serialport::TTYPort;
-
-    use std::sync::mpsc::{channel, Sender, Receiver};
-
-    struct VirtualPort{
-        receiver: Receiver<Vec<u8>>,
-        sender: Sender<Vec<u8>>,
-    }
-
-    impl VirtualPort {
-        fn pair() -> (VirtualPort, VirtualPort) {
-            let (sender1, receiver1) = channel();
-            let (sender2, receiver2) = channel();
-            (VirtualPort { receiver: receiver1, sender: sender2 }, VirtualPort { receiver: receiver2, sender: sender1 })
-        }
-    }
-
-    impl Read for VirtualPort {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize, Error> {
-            let data = self.receiver.recv().unwrap();
-            let len = data.len();
-            buf[..len].copy_from_slice(&data);
-            Ok(len)
-        }
-    }
-
-    impl Write for VirtualPort {
-        fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-            self.sender.send(buf.to_vec()).unwrap();
-            Ok(buf.len())
-        }
-
-        fn flush(&mut self) -> Result<(), Error> {
-            Ok(())
-        }
-    }
-
 
     #[test]
     fn test_transaction() {
@@ -134,11 +130,7 @@ mod tests {
         let mut buf: Vec<u8> = vec![0; 128];
         let t = master.read(buf.as_mut_slice()).unwrap();
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "SNO=1234567890");
-
-        let t = master.read(buf.as_mut_slice()).unwrap();
-        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "\r:");
+        assert_eq!(output, "SNO=1234567890\r:");
 
         // Testing error case
         master.write(b"SNO 1234567890\r").unwrap();
@@ -146,10 +138,6 @@ mod tests {
         let t = master.read(buf.as_mut_slice()).unwrap();
         //println!("Read {} bytes: {:?}", t, &buf[..t]);
         let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "ERR");
-
-        let t = master.read(buf.as_mut_slice()).unwrap();
-        let output = String::from_utf8(buf[..t].to_vec()).unwrap();
-        assert_eq!(output, "\r:");
+        assert_eq!(output, "ERR\r:");
     }
 }

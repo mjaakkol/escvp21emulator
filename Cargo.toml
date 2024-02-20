@@ -1,6 +1,6 @@
 [package]
 name = "escvp21emulator"
-version = "0.1.0"
+version = "0.1.2"
 authors = ["Mikko Jaakkola <mikko.la.jaakkola@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "ESC VP21 emulator for Epson projectors"
